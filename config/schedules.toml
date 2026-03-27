@@ -1,0 +1,20 @@
+# Scheduled Summaries Configuration
+# Format: cron expression (minute hour day month day_of_week)
+# Example: "0 18 * * *" means every day at 6 PM
+
+[[schedules]]
+source_type = "group"
+source_id = "C456def"  # Replace with actual group ID
+cron = "0 18 * * *"    # Daily at 6 PM
+message_count = 100    # Summarize last 100 messages
+
+[[schedules]]
+source_type = "user"
+source_id = "U123abc"  # Replace with actual user ID
+cron = "0 9 * * 1-5"   # Weekdays at 9 AM
+time_range = "24h"     # Summarize messages from last 24 hours
+
+# To find your group/user ID:
+# 1. Add the bot to the group
+# 2. Send a message in the group
+# 3. Check the database or logs for the source_id

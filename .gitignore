@@ -1,0 +1,29 @@
+# Environment variables
+.env
+
+# Cargo
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database (if using local SQLite)
+*.db
+*.sqlite
+
+# ngrok
+ngrok.log
