@@ -25,6 +25,6 @@ COPY admin ./admin
 ENV PORT=8080
 ENV LOG_DIR=/tmp/logs
 
-EXPOSE 443
+EXPOSE 8080
 
 CMD ["line_bot_summarize"]
