@@ -131,6 +131,7 @@ Create and manage task reminders with scheduled notifications:
 | Command | Description |
 |---------|-------------|
 | `!task in 30m` + task list | Create checklist with reminder |
+| `!task at <specific_time>` + task list | Create checklist with reminder at a specific Bangkok time |
 | `!task` + task list | Create checklist without reminder |
 | `done <number>` | Mark task as done (e.g., `done 1`) |
 | `!task` | Show all checklists |
@@ -158,6 +159,20 @@ Create and manage task reminders with scheduled notifications:
 !task in 1d
 1. จ่ายบิล
 2. ซื้อของในบ้าน
+```
+
+**Create a checklist with a specific time:**
+```
+!task at 16:30
+1. เตรียมประชุม
+2. ส่งสรุป
+```
+
+You can also use a dot separator:
+```
+!task at 16.30
+1. เตรียมประชุม
+2. ส่งสรุป
 ```
 
 **Mark task as done:**

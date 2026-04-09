@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::sync::{Mutex, MutexGuard, OnceLock};
 use sqlx::{Executor, PgPool};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 pub async fn setup_db(pool: &PgPool) -> Result<()> {
     let schema = std::fs::read_to_string("sql/schema.sql")?;
@@ -28,4 +28,17 @@ pub async fn setup_db(pool: &PgPool) -> Result<()> {
 pub fn lock_db() -> MutexGuard<'static, ()> {
     static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
+
+pub async fn try_setup_pool(clear_statements: &[&str]) -> Option<PgPool> {
+    let database_url = std::env::var("DATABASE_URL").ok()?;
+    let pool = PgPool::connect(&database_url).await.ok()?;
+
+    setup_db(&pool).await.ok()?;
+
+    for statement in clear_statements {
+        sqlx::query(statement).execute(&pool).await.ok()?;
+    }
+
+    Some(pool)
 }

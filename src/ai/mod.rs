@@ -51,8 +51,7 @@ pub fn create_ai_service(
             )?))
         }
         crate::config::AIProvider::Zai => {
-            let api_key =
-                zai_api_key.ok_or_else(|| anyhow::anyhow!("Zai API key is required"))?;
+            let api_key = zai_api_key.ok_or_else(|| anyhow::anyhow!("Zai API key is required"))?;
             Ok(Box::new(zai::ZaiService::new(api_key, zai_model)?))
         }
     }
@@ -174,5 +173,4 @@ mod tests {
         );
         assert!(result.is_err());
     }
-
 }

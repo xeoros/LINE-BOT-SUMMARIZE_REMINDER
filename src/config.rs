@@ -250,8 +250,7 @@ impl Config {
             std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.0-flash".to_string());
         let minimax_model =
             std::env::var("MINIMAX_MODEL").unwrap_or_else(|_| "abab6.5s-chat".to_string());
-        let zai_model =
-            std::env::var("ZAI_MODEL").unwrap_or_else(|_| "zai-7b".to_string());
+        let zai_model = std::env::var("ZAI_MODEL").unwrap_or_else(|_| "zai-7b".to_string());
 
         let port: u16 = std::env::var("PORT")
             .unwrap_or_else(|_| "3000".to_string())
@@ -346,10 +345,22 @@ mod tests {
 
     #[test]
     fn integration_mode_from_str_variants() {
-        assert_eq!(IntegrationMode::from_str("webhook").unwrap(), IntegrationMode::Webhook);
-        assert_eq!(IntegrationMode::from_str("events_api").unwrap(), IntegrationMode::EventsAPI);
-        assert_eq!(IntegrationMode::from_str("eventsapi").unwrap(), IntegrationMode::EventsAPI);
-        assert_eq!(IntegrationMode::from_str("both").unwrap(), IntegrationMode::Both);
+        assert_eq!(
+            IntegrationMode::from_str("webhook").unwrap(),
+            IntegrationMode::Webhook
+        );
+        assert_eq!(
+            IntegrationMode::from_str("events_api").unwrap(),
+            IntegrationMode::EventsAPI
+        );
+        assert_eq!(
+            IntegrationMode::from_str("eventsapi").unwrap(),
+            IntegrationMode::EventsAPI
+        );
+        assert_eq!(
+            IntegrationMode::from_str("both").unwrap(),
+            IntegrationMode::Both
+        );
     }
 
     #[test]
@@ -363,7 +374,10 @@ mod tests {
         assert_eq!(AIProvider::from_str("claude").unwrap(), AIProvider::Claude);
         assert_eq!(AIProvider::from_str("openai").unwrap(), AIProvider::OpenAI);
         assert_eq!(AIProvider::from_str("gemini").unwrap(), AIProvider::Gemini);
-        assert_eq!(AIProvider::from_str("minimax").unwrap(), AIProvider::Minimax);
+        assert_eq!(
+            AIProvider::from_str("minimax").unwrap(),
+            AIProvider::Minimax
+        );
         assert_eq!(AIProvider::from_str("zai").unwrap(), AIProvider::Zai);
     }
 

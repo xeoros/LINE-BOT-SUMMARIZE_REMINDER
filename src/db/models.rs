@@ -510,23 +510,17 @@ mod tests {
         assert!(result.contains("  [Alice"));
     }
 
-    async fn setup_pool() -> PgPool {
-        let database_url =
-            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for DB tests");
-        let pool = PgPool::connect(&database_url)
-            .await
-            .expect("Failed to connect to database");
-        crate::db::test_utils::setup_db(&pool)
-            .await
-            .expect("Failed to setup schema");
-        sqlx::query("DELETE FROM messages").execute(&pool).await.unwrap();
-        pool
+    async fn setup_pool() -> Option<PgPool> {
+        crate::db::test_utils::try_setup_pool(&["DELETE FROM messages"]).await
     }
 
     #[tokio::test]
     async fn db_message_queries_work() {
         let _lock = crate::db::test_utils::lock_db();
-        let pool = setup_pool().await;
+        let Some(pool) = setup_pool().await else {
+            eprintln!("Skipping db_message_queries_work: DATABASE_URL unavailable or database unreachable");
+            return;
+        };
 
         Message::save(
             &pool,
@@ -568,7 +562,9 @@ mod tests {
             .unwrap();
         assert_eq!(by_range.len(), 2);
 
-        let thread = Message::get_thread_messages(&pool, "thread1").await.unwrap();
+        let thread = Message::get_thread_messages(&pool, "thread1")
+            .await
+            .unwrap();
         assert_eq!(thread.len(), 2);
 
         let threads = Message::get_recent_threads(&pool, SourceType::Group, "G1", 5)

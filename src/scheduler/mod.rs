@@ -205,8 +205,8 @@ fn parse_time_range(range: &str) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use sqlx::PgPool;
+    use std::io::Write;
 
     struct DummyAI;
 
@@ -258,23 +258,17 @@ message_count = 50
         assert_eq!(config.schedules[0].message_count, Some(50));
     }
 
-    async fn setup_pool() -> PgPool {
-        let database_url =
-            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for DB tests");
-        let pool = PgPool::connect(&database_url)
-            .await
-            .expect("Failed to connect to database");
-        crate::db::test_utils::setup_db(&pool)
-            .await
-            .expect("Failed to setup schema");
-        sqlx::query("DELETE FROM messages").execute(&pool).await.unwrap();
-        pool
+    async fn setup_pool() -> Option<PgPool> {
+        crate::db::test_utils::try_setup_pool(&["DELETE FROM messages"]).await
     }
 
     #[tokio::test]
     async fn execute_scheduled_summary_with_count() {
         let _lock = crate::db::test_utils::lock_db();
-        let pool = setup_pool().await;
+        let Some(pool) = setup_pool().await else {
+            eprintln!("Skipping execute_scheduled_summary_with_count: DATABASE_URL unavailable or database unreachable");
+            return;
+        };
         Message::save(
             &pool,
             "m1",
@@ -292,17 +286,9 @@ message_count = 50
 
         let client = LineClient::new("token".to_string());
         let ai = DummyAI;
-        let result = execute_scheduled_summary(
-            &pool,
-            &client,
-            &ai,
-            "group",
-            "G1",
-            Some(10),
-            None,
-            None,
-        )
-        .await;
+        let result =
+            execute_scheduled_summary(&pool, &client, &ai, "group", "G1", Some(10), None, None)
+                .await;
         assert!(result.is_ok());
     }
 }

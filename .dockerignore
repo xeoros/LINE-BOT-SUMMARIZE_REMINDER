@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+target
+logs
+tmp
+.DS_Store
+README.md
+docs
+scripts
+IMPLEMENTATION_SUMMARY.md

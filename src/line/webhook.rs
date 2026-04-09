@@ -171,6 +171,9 @@ mod tests {
         assert_eq!(event.event_type, "message");
         assert_eq!(event.reply_token.as_deref(), Some("token"));
         assert_eq!(event.source.source_type, "user");
-        assert_eq!(event.message.as_ref().unwrap().text.as_deref(), Some("hello"));
+        assert_eq!(
+            event.message.as_ref().unwrap().text.as_deref(),
+            Some("hello")
+        );
     }
 }

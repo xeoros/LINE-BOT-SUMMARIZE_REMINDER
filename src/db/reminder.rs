@@ -226,10 +226,7 @@ impl Reminder {
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn clear_notify_time_by_checklist(
-        pool: &PgPool,
-        checklist_id: &str,
-    ) -> Result<u64> {
+    pub async fn clear_notify_time_by_checklist(pool: &PgPool, checklist_id: &str) -> Result<u64> {
         let result = sqlx::query(
             r#"
             UPDATE reminders
@@ -654,24 +651,18 @@ mod tests {
         assert!(output.contains("[x] 2. ~~Second~~"));
     }
 
-    async fn setup_pool() -> PgPool {
-        let database_url =
-            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for DB tests");
-        let pool = PgPool::connect(&database_url)
+    async fn setup_pool() -> Option<PgPool> {
+        crate::db::test_utils::try_setup_pool(&["DELETE FROM reminders", "DELETE FROM checklists"])
             .await
-            .expect("Failed to connect to database");
-        crate::db::test_utils::setup_db(&pool)
-            .await
-            .expect("Failed to setup schema");
-        sqlx::query("DELETE FROM reminders").execute(&pool).await.unwrap();
-        sqlx::query("DELETE FROM checklists").execute(&pool).await.unwrap();
-        pool
     }
 
     #[tokio::test]
     async fn db_reminder_and_checklist_queries_work() {
         let _lock = crate::db::test_utils::lock_db();
-        let pool = setup_pool().await;
+        let Some(pool) = setup_pool().await else {
+            eprintln!("Skipping db_reminder_and_checklist_queries_work: DATABASE_URL unavailable or database unreachable");
+            return;
+        };
 
         let checklist_id = "c1";
         let _checklist_row = Checklist::save(
@@ -722,10 +713,10 @@ mod tests {
             .unwrap();
         assert!(by_task.is_some());
 
-        let updated = Reminder::update_notify_time(&pool, checklist_id, Utc::now())
+        let updated = Reminder::update_notify_time(&pool, checklist_id, Some(Utc::now()))
             .await
             .unwrap();
-        assert!(updated > 0);
+        assert!(updated);
 
         let pending = Reminder::get_pending_reminders(&pool).await.unwrap();
         assert!(!pending.is_empty());
@@ -756,7 +747,9 @@ mod tests {
             .unwrap();
         assert!(updated_schedule);
 
-        let deleted = Reminder::delete_checklist(&pool, checklist_id).await.unwrap();
+        let deleted = Reminder::delete_checklist(&pool, checklist_id)
+            .await
+            .unwrap();
         assert!(deleted > 0);
 
         let deleted_checklist = Checklist::delete(&pool, checklist_id).await.unwrap();

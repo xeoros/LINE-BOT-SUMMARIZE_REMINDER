@@ -19,8 +19,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info, warn};
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use tracing_subscriber::fmt::time::OffsetTime;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use ai::create_ai_service;
 use config::{AIProvider, CliArgs, Config};
@@ -125,9 +125,7 @@ async fn main() -> Result<()> {
             }
             AIProvider::Zai => {
                 if config.zai_api_key.is_none() {
-                    anyhow::bail!(
-                        "ZAI_API_KEY environment variable is required when using Zai"
-                    );
+                    anyhow::bail!("ZAI_API_KEY environment variable is required when using Zai");
                 }
             }
         }

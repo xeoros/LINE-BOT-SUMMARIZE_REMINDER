@@ -34,7 +34,33 @@ pub enum ReminderCommand {
 
 #[derive(Debug, Clone)]
 pub struct ScheduleInfo {
-    pub minutes: i64,
+    pub kind: ScheduleKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ScheduleKind {
+    RelativeMinutes(i64),
+    AbsoluteTime(DateTime<Utc>),
+}
+
+impl ScheduleInfo {
+    pub fn minutes(&self) -> Option<i64> {
+        match &self.kind {
+            ScheduleKind::RelativeMinutes(minutes) => Some(*minutes),
+            ScheduleKind::AbsoluteTime(_) => None,
+        }
+    }
+
+    pub fn is_absolute_time(&self) -> bool {
+        matches!(self.kind, ScheduleKind::AbsoluteTime(_))
+    }
+
+    pub fn absolute_time(&self) -> Option<DateTime<Utc>> {
+        match &self.kind {
+            ScheduleKind::AbsoluteTime(dt) => Some(dt.clone()),
+            ScheduleKind::RelativeMinutes(_) => None,
+        }
+    }
 }
 
 fn extract_time_from_text(text: &str) -> Option<String> {
@@ -62,6 +88,41 @@ fn extract_time_from_text(text: &str) -> Option<String> {
     }
 
     None
+}
+
+fn parse_absolute_bangkok_time(text: &str, now: DateTime<FixedOffset>) -> Option<DateTime<Utc>> {
+    let text = text.trim();
+    let text = text.strip_prefix("at ").unwrap_or(text).trim();
+
+    let time_pattern = Regex::new(r"^(\d{1,2})[.:](\d{2})\b").unwrap();
+    let caps = time_pattern.captures(text)?;
+    let hour: u32 = caps.get(1)?.as_str().parse().ok()?;
+    let minute: u32 = caps.get(2)?.as_str().parse().ok()?;
+
+    if hour > 23 || minute > 59 {
+        return None;
+    }
+
+    let local_now = now.with_timezone(&bangkok_offset());
+    let local_date = local_now.date_naive();
+    let candidate_naive = local_date.and_hms_opt(hour, minute, 0)?;
+    let candidate = bangkok_offset()
+        .from_local_datetime(&candidate_naive)
+        .single()
+        .expect("Bangkok time is a fixed offset");
+
+    let candidate = if candidate <= local_now {
+        let next_day = local_date + chrono::Duration::days(1);
+        let next_candidate_naive = next_day.and_hms_opt(hour, minute, 0)?;
+        bangkok_offset()
+            .from_local_datetime(&next_candidate_naive)
+            .single()
+            .expect("Bangkok time is a fixed offset")
+    } else {
+        candidate
+    };
+
+    Some(candidate.with_timezone(&Utc))
 }
 
 fn bangkok_offset() -> FixedOffset {
@@ -108,12 +169,55 @@ fn sort_recent_checklist_ids(mut reminders: Vec<Reminder>) -> Vec<String> {
 }
 
 fn extract_checklist_id(text: &str) -> Option<String> {
-    let chars: Vec<char> = text.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+    let chars: Vec<char> = text
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
     if chars.len() >= 8 {
         Some(chars.iter().collect())
     } else {
         None
     }
+}
+
+fn extract_title_from_ai_output(output: &str) -> Option<String> {
+    fn normalize_title_line(line: &str) -> &str {
+        line.trim_start_matches(|c: char| c == '#' || c.is_whitespace())
+            .trim_start_matches(|c: char| c == '-' || c == '*')
+            .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.')
+            .trim()
+    }
+
+    let mut saw_summary_heading = false;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let without_heading = trimmed.trim_start_matches('#').trim();
+        let heading_text = without_heading.trim_end_matches([':', '：']).trim();
+        if heading_text == "สรุปย่อ" {
+            saw_summary_heading = true;
+            continue;
+        }
+
+        if saw_summary_heading {
+            let candidate = normalize_title_line(without_heading);
+
+            if !candidate.is_empty() {
+                return Some(candidate.to_string());
+            }
+        }
+    }
+
+    output
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(normalize_title_line)
+        .map(str::to_string)
 }
 
 pub struct ReminderHandler;
@@ -122,7 +226,8 @@ impl ReminderHandler {
     pub fn parse(text: &str) -> Option<ReminderCommand> {
         let text = text.trim();
 
-        if text.eq_ignore_ascii_case("help") || text.eq_ignore_ascii_case("ช่วยเหลือ") {
+        if text.eq_ignore_ascii_case("help") || text.eq_ignore_ascii_case("ช่วยเหลือ")
+        {
             return Some(ReminderCommand::Help);
         }
 
@@ -346,6 +451,10 @@ impl ReminderHandler {
         let time_pattern =
             Regex::new(r"^(?:in\s+)?(\d+)\s*(m|min|mins|minutes|h|hr|hrs|hours|d|day|days)\b")
                 .unwrap();
+        let datetime_pattern = Regex::new(
+            r"(?s)^(?:at\s+)?(?P<datetime>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2})(?:\s+(?P<rest>.*))?$",
+        )
+        .unwrap();
 
         if let Some(caps) = time_pattern.captures(text) {
             let value: i64 = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
@@ -360,7 +469,47 @@ impl ReminderHandler {
 
             let remaining_start = caps.get(0).unwrap().end();
             let remaining = text[remaining_start..].trim();
-            (Some(ScheduleInfo { minutes }), remaining)
+            (
+                Some(ScheduleInfo {
+                    kind: ScheduleKind::RelativeMinutes(minutes),
+                }),
+                remaining,
+            )
+        } else if let Some(caps) = datetime_pattern.captures(text) {
+            let datetime_text = caps.name("datetime").unwrap().as_str();
+
+            if let Some(notify_at) = parse_bangkok_datetime(datetime_text) {
+                let remaining = caps.name("rest").map(|m| m.as_str().trim()).unwrap_or("");
+
+                (
+                    Some(ScheduleInfo {
+                        kind: ScheduleKind::AbsoluteTime(notify_at),
+                    }),
+                    remaining,
+                )
+            } else {
+                (None, text)
+            }
+        } else if text.to_lowercase().starts_with("at ")
+            || Regex::new(r"^\d{1,2}[.:]\d{2}\b").unwrap().is_match(text)
+        {
+            if let Some(notify_at) = parse_absolute_bangkok_time(text, bangkok_now()) {
+                let remaining = text
+                    .strip_prefix("at ")
+                    .unwrap_or(text)
+                    .split_once(|c: char| c.is_whitespace())
+                    .map(|(_, rest)| rest.trim())
+                    .unwrap_or("");
+
+                (
+                    Some(ScheduleInfo {
+                        kind: ScheduleKind::AbsoluteTime(notify_at),
+                    }),
+                    remaining,
+                )
+            } else {
+                (None, text)
+            }
         } else {
             (None, text)
         }
@@ -417,15 +566,16 @@ impl ReminderHandler {
                             }])
                             .await
                             .ok()
-                            .map(|t| t.trim().to_string())
+                            .and_then(|t| extract_title_from_ai_output(&t))
                             .filter(|t| !t.is_empty())
                     } else {
                         None
                     };
 
-                    Some(generated_title.unwrap_or_else(|| {
-                        Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-                    }))
+                    Some(
+                        generated_title
+                            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()),
+                    )
                 } else {
                     title.clone()
                 };
@@ -530,10 +680,15 @@ impl ReminderHandler {
                 let notify_at = parse_bangkok_datetime(time_str);
 
                 if let Some(notify_at) = notify_at {
-                    Reminder::update_notify_time(pool, &notified_reminder.reminder_id, Some(notify_at))
-                        .await?;
+                    Reminder::update_notify_time(
+                        pool,
+                        &notified_reminder.reminder_id,
+                        Some(notify_at),
+                    )
+                    .await?;
 
-                    let updated_reminders = Reminder::get_by_checklist(pool, &target_checklist_id).await?;
+                    let updated_reminders =
+                        Reminder::get_by_checklist(pool, &target_checklist_id).await?;
                     let done_count = updated_reminders.iter().filter(|r| r.is_completed).count();
                     let total_count = updated_reminders.len();
                     format!(
@@ -608,9 +763,10 @@ impl ReminderHandler {
         )
         .await?;
 
-        let notify_at = schedule
-            .as_ref()
-            .map(|s| Utc::now() + Duration::minutes(s.minutes));
+        let notify_at = schedule.as_ref().map(|s| match &s.kind {
+            ScheduleKind::RelativeMinutes(minutes) => Utc::now() + Duration::minutes(*minutes),
+            ScheduleKind::AbsoluteTime(dt) => dt.clone(),
+        });
 
         for (idx, task_text) in tasks.iter().enumerate() {
             let task_number = (idx + 1) as i32;
@@ -634,14 +790,22 @@ impl ReminderHandler {
         let checklist_text = Reminder::format_checklist(&reminders, &checklist_id);
 
         let schedule_msg = if let Some(s) = schedule {
-            let time_str = if s.minutes >= 60 * 24 {
-                format!("{} วัน", s.minutes / (60 * 24))
-            } else if s.minutes >= 60 {
-                format!("{} ชั่วโมง", s.minutes / 60)
-            } else {
-                format!("{} นาที", s.minutes)
-            };
-            format!("\n\n⏰ จะส่งเตือนในอีก {}", time_str)
+            match &s.kind {
+                ScheduleKind::RelativeMinutes(minutes) => {
+                    let time_str = if *minutes >= 60 * 24 {
+                        format!("{} วัน", minutes / (60 * 24))
+                    } else if *minutes >= 60 {
+                        format!("{} ชั่วโมง", minutes / 60)
+                    } else {
+                        format!("{} นาที", minutes)
+                    };
+                    format!("\n\n⏰ จะส่งเตือนในอีก {}", time_str)
+                }
+                ScheduleKind::AbsoluteTime(dt) => format!(
+                    "\n\n⏰ จะส่งเตือนเวลา {}",
+                    dt.with_timezone(&bangkok_offset()).format("%Y-%m-%d %H:%M")
+                ),
+            }
         } else {
             String::new()
         };
@@ -705,8 +869,10 @@ impl ReminderHandler {
         let mut reminder = None;
 
         for candidate_checklist_id in candidate_checklists.drain(..) {
-            let checklist_reminders = Reminder::get_by_checklist(pool, &candidate_checklist_id).await?;
-            if let Some(found) = find_uncompleted_reminder(&checklist_reminders, actual_task_number) {
+            let checklist_reminders =
+                Reminder::get_by_checklist(pool, &candidate_checklist_id).await?;
+            if let Some(found) = find_uncompleted_reminder(&checklist_reminders, actual_task_number)
+            {
                 target_checklist_id = candidate_checklist_id;
                 reminder = Some(found.clone());
                 break;
@@ -717,7 +883,8 @@ impl ReminderHandler {
             Reminder::mark_completed(pool, &rem.reminder_id).await?;
 
             let updated_reminders = Reminder::get_by_checklist(pool, &target_checklist_id).await?;
-            let checklist_text = Reminder::format_checklist(&updated_reminders, &target_checklist_id);
+            let checklist_text =
+                Reminder::format_checklist(&updated_reminders, &target_checklist_id);
 
             let done_count = updated_reminders.iter().filter(|r| r.is_completed).count();
             let total_count = updated_reminders.len();
@@ -845,6 +1012,14 @@ impl ReminderHandler {
 1. ทำรายงาน
 2. โทรหาลูกค้า
 
+!task at 16:30
+1. เตรียมประชุม
+2. ส่งสรุป
+
+!task 2026-03-31 16:30
+1. เตรียมประชุม
+2. ส่งสรุป
+
 ✅ ทำเครื่องหมายว่าเสร็จแล้ว:
 done 1 หรือ เสร็จ 1 หรือ x 1
 
@@ -930,10 +1105,105 @@ mod tests {
         match cmd {
             Some(ReminderCommand::AddChecklist { schedule, .. }) => {
                 assert!(schedule.is_some());
-                assert_eq!(schedule.unwrap().minutes, 30);
+                assert_eq!(schedule.unwrap().minutes().unwrap(), 30);
             }
             _ => panic!("Expected AddChecklist command"),
         }
+    }
+
+    #[test]
+    fn test_parse_add_checklist_with_absolute_time_schedule() {
+        let cmd = ReminderHandler::parse(
+            "!task at 16.30\n1. Buy pet food\n2. Bill Monthly Mobile internet",
+        );
+        match cmd {
+            Some(ReminderCommand::AddChecklist { schedule, .. }) => {
+                let schedule = schedule.expect("expected schedule");
+                assert!(schedule.is_absolute_time());
+                assert_eq!(
+                    schedule
+                        .absolute_time()
+                        .unwrap()
+                        .with_timezone(&bangkok_offset())
+                        .format("%H:%M")
+                        .to_string(),
+                    "16:30"
+                );
+            }
+            _ => panic!("Expected AddChecklist command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_add_checklist_with_absolute_datetime_schedule() {
+        let cmd = ReminderHandler::parse(
+            "!task 2026-03-31 16:30\n1. Buy pet food\n2. Bill Monthly Mobile internet",
+        );
+        match cmd {
+            Some(ReminderCommand::AddChecklist { schedule, .. }) => {
+                let schedule = schedule.expect("expected schedule");
+                assert!(schedule.is_absolute_time());
+                assert_eq!(
+                    schedule
+                        .absolute_time()
+                        .unwrap()
+                        .with_timezone(&bangkok_offset())
+                        .format("%Y-%m-%d %H:%M")
+                        .to_string(),
+                    "2026-03-31 16:30"
+                );
+            }
+            _ => panic!("Expected AddChecklist command"),
+        }
+    }
+
+    #[test]
+    fn test_extract_title_from_summary_section_only_uses_first_summary_line() {
+        let output = r#"
+# สรุปย่อ
+- ซื้ออาหารสุนัข
+- จ่ายบิลมือถือ
+
+## รายละเอียด
+something else
+"#;
+
+        assert_eq!(
+            extract_title_from_ai_output(output).as_deref(),
+            Some("ซื้ออาหารสุนัข")
+        );
+    }
+
+    #[test]
+    fn test_extract_title_from_summary_section_accepts_colon_heading() {
+        let output = r#"
+## สรุปย่อ:
+1. เตรียมประชุมทีม
+2. ส่งสรุป
+"#;
+
+        assert_eq!(
+            extract_title_from_ai_output(output).as_deref(),
+            Some("เตรียมประชุมทีม")
+        );
+    }
+
+    #[test]
+    fn test_parse_absolute_time_schedule_rolls_over_to_tomorrow_when_time_has_passed() {
+        let now = bangkok_offset()
+            .with_ymd_and_hms(2026, 3, 31, 17, 0, 0)
+            .single()
+            .unwrap();
+
+        let scheduled = parse_absolute_bangkok_time("16.30", now).expect("expected scheduled time");
+
+        assert_eq!(
+            scheduled
+                .with_timezone(&bangkok_offset())
+                .format("%Y-%m-%d %H:%M")
+                .to_string(),
+            "2026-04-01 16:30"
+        );
     }
 
     #[test]
