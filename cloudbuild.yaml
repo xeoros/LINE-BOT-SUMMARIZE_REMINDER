@@ -3,11 +3,11 @@ steps:
     args:
       - build
       - -t
-      - us-central1-docker.pkg.dev/$PROJECT_ID/line-bot/line-bot-summarize:$COMMIT_SHA
+      - asia-southeast1-docker.pkg.dev/$PROJECT_ID/line-bot/line-bot-summarize:$COMMIT_SHA
       - .
 
 images:
-  - us-central1-docker.pkg.dev/$PROJECT_ID/line-bot/line-bot-summarize:$COMMIT_SHA
+  - asia-southeast1-docker.pkg.dev/$PROJECT_ID/line-bot/line-bot-summarize:$COMMIT_SHA
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET

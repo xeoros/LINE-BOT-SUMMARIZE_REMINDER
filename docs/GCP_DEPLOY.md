@@ -9,7 +9,7 @@ If your trigger or build uses a custom Cloud Build service account, Cloud Build 
 ```bash
 gcloud artifacts repositories create line-bot \
   --repository-format=docker \
-  --location=us-central1
+  --location=asia-southeast1
 ```
 
 ## 2. Build the container with Cloud Build
@@ -17,14 +17,14 @@ gcloud artifacts repositories create line-bot \
 ```bash
 gcloud builds submit \
   --config cloudbuild.yaml \
-  --substitutions=_IMAGE_URI=us-central1-docker.pkg.dev/PROJECT_ID/line-bot/line-bot-summarize:latest
+  --project PROJECT_ID
 ```
 
 You can also let Cloud Build discover the `Dockerfile` automatically:
 
 ```bash
 gcloud builds submit \
-  --tag us-central1-docker.pkg.dev/PROJECT_ID/line-bot/line-bot-summarize:latest \
+  --tag asia-southeast1-docker.pkg.dev/PROJECT_ID/line-bot/line-bot-summarize:latest \
   --default-buckets-behavior=regional-user-owned-bucket
 ```
 
@@ -32,8 +32,8 @@ gcloud builds submit \
 
 ```bash
 gcloud run deploy line-bot-summarize \
-  --image us-central1-docker.pkg.dev/PROJECT_ID/line-bot/line-bot-summarize:latest \
-  --region us-central1 \
+  --image asia-southeast1-docker.pkg.dev/PROJECT_ID/line-bot/line-bot-summarize:latest \
+  --region asia-southeast1 \
   --platform managed \
   --allow-unauthenticated \
   --port 8080
@@ -45,7 +45,7 @@ Set the required variables during deploy or afterward:
 
 ```bash
 gcloud run services update line-bot-summarize \
-  --region us-central1 \
+  --region asia-southeast1 \
   --set-env-vars PORT=8080,LOG_DIR=/tmp/logs,SCHEDULES_CONFIG_PATH=config/schedules.toml,DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DB,AI_PROVIDER=claude,ENABLE_LINE=true,ENABLE_SLACK=false,ENABLE_TEAMS=false \
   --set-secrets LINE_CHANNEL_ACCESS_TOKEN=LINE_CHANNEL_ACCESS_TOKEN:latest,LINE_CHANNEL_SECRET=LINE_CHANNEL_SECRET:latest,CLAUDE_API_KEY=CLAUDE_API_KEY:latest
 ```
