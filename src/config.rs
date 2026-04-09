@@ -170,9 +170,9 @@ impl Config {
             .unwrap_or(true);
 
         let enable_slack: bool = std::env::var("ENABLE_SLACK")
-            .unwrap_or_else(|_| "true".to_string())
+            .unwrap_or_else(|_| "false".to_string())
             .parse()
-            .unwrap_or(true);
+            .unwrap_or(false);
 
         let enable_teams: bool = std::env::var("ENABLE_TEAMS")
             .unwrap_or_else(|_| "false".to_string())
@@ -408,5 +408,20 @@ mod tests {
         let result = Config::from_env();
         clear_min_required_env();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn config_from_env_disables_slack_by_default() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        set_min_required_env();
+        clear_env("ENABLE_SLACK");
+        clear_env("SLACK_BOT_TOKEN");
+        clear_env("SLACK_SIGNING_SECRET");
+        clear_env("SLACK_INTEGRATION_MODE");
+
+        let config = Config::from_env().unwrap();
+
+        clear_min_required_env();
+        assert!(!config.enable_slack);
     }
 }
