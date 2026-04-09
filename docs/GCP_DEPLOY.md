@@ -2,6 +2,8 @@
 
 This repository can be built by Cloud Build using either `cloudbuild.yaml` or the root `Dockerfile`.
 
+If your trigger or build uses a custom Cloud Build service account, Cloud Build requires an explicit log storage configuration. This repository's `cloudbuild.yaml` is configured with `defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET` to satisfy that requirement.
+
 ## 1. Create an Artifact Registry repository
 
 ```bash
@@ -21,7 +23,9 @@ gcloud builds submit \
 You can also let Cloud Build discover the `Dockerfile` automatically:
 
 ```bash
-gcloud builds submit --tag us-central1-docker.pkg.dev/PROJECT_ID/line-bot/line-bot-summarize:latest
+gcloud builds submit \
+  --tag us-central1-docker.pkg.dev/PROJECT_ID/line-bot/line-bot-summarize:latest \
+  --default-buckets-behavior=regional-user-owned-bucket
 ```
 
 ## 3. Deploy to Cloud Run
@@ -53,3 +57,4 @@ Adjust the secrets and flags to match the platforms you actually enable. If `ENA
 - Cloud Run injects the `PORT` environment variable automatically; the app already listens on `0.0.0.0:$PORT`.
 - `LOG_DIR` is set to `/tmp/logs` because Cloud Run does not provide persistent local storage.
 - The app runs SQL migrations on startup, so the configured `DATABASE_URL` must be reachable from Cloud Run.
+- If your build still fails, ensure the Cloud Build service account can create and write Cloud Storage objects in the build project, because `REGIONAL_USER_OWNED_BUCKET` uses a project-owned logs bucket.
